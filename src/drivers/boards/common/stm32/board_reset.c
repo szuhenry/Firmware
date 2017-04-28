@@ -42,6 +42,7 @@
 #include <stm32_pwr.h>
 #include <nuttx/board.h>
 
+#include <drivers/drv_pwm_output.h>
 
 int board_set_bootload_mode(board_reset_e mode)
 {
@@ -69,6 +70,9 @@ int board_set_bootload_mode(board_reset_e mode)
 
 void board_system_reset(int status)
 {
+#if defined(CONFIG_ARCH_BOARD_PX4FMU_V4)
+	up_pwm_servo_deinit();
+#endif
 	board_reset(status);
 
 	while (1);
