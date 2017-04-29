@@ -452,8 +452,8 @@ CameraTrigger::cycle_trampoline(void *arg)
 
 			if (cmd.param5 > 0) {
 
-				// If camera isn't powered on, we enable power
-				// to it on getting the test command.
+				// If camera isn't powered on, we enable power to it on
+				// getting the test command.
 
 				if (trig->_camera_interface->has_power_control() &&
 				    !trig->_camera_interface->is_powered_on()) {
@@ -497,123 +497,126 @@ CameraTrigger::cycle_trampoline(void *arg)
 
 				}
 
-				// Set trigger rate from command
 				if (cmd.param2 > 0.0f) {
+					// set trigger rate from command
 					trig->_interval = cmd.param2;
 					param_set(trig->_p_interval, &(trig->_interval));
 				}
 
-				if (cmd.param1 < 1.0f) {
-					trig->control(false);
-
-				} else if (cmd.param1 >= 1.0f) {
+				if (cmd.param1 > 0.0f) {
 					trig->control(true);
 					// while the trigger is active there is no
 					// need to poll at a very high rate
 					poll_interval_usec = 100000;
+
+				} else {
+					trig->control(false);
+
 				}
 
 				cmd_result = vehicle_command_s::VEHICLE_CMD_RESULT_ACCEPTED;
 
 			}
+		}
 
-		} else if (trig->_mode == 3 || trig->_mode == 4) { // 3,4 - Distance controlled modes
+	} else if (trig->_mode == 3 || trig->_mode == 4) { // 3,4 - Distance controlled modes
 
-			// Set trigger based on covered distance
-			if (trig->_vlposition_sub < 0) {
-				trig->_vlposition_sub = orb_subscribe(ORB_ID(vehicle_local_position));
-			}
+		// Set trigger based on covered distance
+		if (trig->_vlposition_sub < 0) {
+			trig->_vlposition_sub = orb_subscribe(ORB_ID(vehicle_local_position));
+		}
 
-			struct vehicle_local_position_s pos = {};
+		struct vehicle_local_position_s pos = {};
 
-			orb_copy(ORB_ID(vehicle_local_position), trig->_vlposition_sub, &pos);
+		orb_copy(ORB_ID(vehicle_local_position), trig->_vlposition_sub, &pos);
 
-			if (pos.xy_valid) {
+		if (pos.xy_valid) {
 
-				// Check update from command
-				if (updated) {
+			// Check for command update
+			if (updated) {
 
-					if (cmd.command == vehicle_command_s::VEHICLE_CMD_DO_SET_CAM_TRIGG_DIST) {
+				if (cmd.command == vehicle_command_s::VEHICLE_CMD_DO_SET_CAM_TRIGG_DIST) {
 
-						need_ack = true;
+					need_ack = true;
 
-						// Set trigger to disabled if the set distance is not positive
-						if (cmd.param1 > 0.0f && !trig->_trigger_enabled) {
+					if (cmd.param1 > 0.0f && !trig->_trigger_enabled) {
 
-							if (trig->_camera_interface->has_power_control()) {
-								trig->toggle_power();
-								trig->enable_keep_alive(true);
+						if (trig->_camera_interface->has_power_control()) {
+							trig->toggle_power();
+							trig->enable_keep_alive(true);
 
-								// Give the camera time to turn on, before starting to send trigger signals
-								poll_interval_usec = 3000000;
-								turning_on = true;
-							}
-
-						} else if (cmd.param1 <= 0.0f && trig->_trigger_enabled) {
-
-							hrt_cancel(&(trig->_engagecall));
-							hrt_cancel(&(trig->_disengagecall));
-
-							if (trig->_camera_interface->has_power_control()) {
-								trig->enable_keep_alive(false);
-								trig->toggle_power();
-							}
-
+							// Give the camera time to turn on before sending trigger signals
+							poll_interval_usec = 3000000;
+							turning_on = true;
 						}
 
-						trig->_trigger_enabled = cmd.param1 > 0.0f;
-						trig->_distance = cmd.param1;
+					} else if (cmd.param1 <= 0.0f && trig->_trigger_enabled) {
 
-						cmd_result = vehicle_command_s::VEHICLE_CMD_RESULT_ACCEPTED;
+						// Disable trigger if the set distance is not positive
+						hrt_cancel(&(trig->_engagecall));
+						hrt_cancel(&(trig->_disengagecall));
+
+						if (trig->_camera_interface->has_power_control()) {
+							trig->enable_keep_alive(false);
+							trig->toggle_power();
+						}
 
 					}
-				}
 
-				if (trig->_trigger_enabled && !turning_on) {
+					trig->_trigger_enabled = cmd.param1 > 0.0f;
+					trig->_distance = cmd.param1;
 
-					// Initialize position if not done yet
-					math::Vector<2> current_position(pos.x, pos.y);
-
-					if (!trig->_valid_position) {
-						// First time valid position, take first shot
-						trig->_last_shoot_position = current_position;
-						trig->_valid_position = pos.xy_valid;
-						trig->shoot_once();
-					}
-
-					// Check that distance threshold is exceeded
-					if ((trig->_last_shoot_position - current_position).length() >= trig->_distance) {
-						trig->shoot_once();
-						trig->_last_shoot_position = current_position;
-					}
+					cmd_result = vehicle_command_s::VEHICLE_CMD_RESULT_ACCEPTED;
 
 				}
-
-			} else {
-				poll_interval_usec = 100000;
 			}
-		}
-	}
 
-	// Send ACKs for trigger commands
-	if (updated && need_ack) {
-		vehicle_command_ack_s command_ack = {};
+			if (trig->_trigger_enabled && !turning_on) {
 
-		command_ack.command = cmd.command;
-		command_ack.result = cmd_result;
+				// Initialize position if not done yet
+				math::Vector<2> current_position(pos.x, pos.y);
 
-		if (trig->_cmd_ack_pub == nullptr) {
-			trig->_cmd_ack_pub = orb_advertise_queue(ORB_ID(vehicle_command_ack), &command_ack,
-					     vehicle_command_ack_s::ORB_QUEUE_LENGTH);
+				if (!trig->_valid_position) {
+					// First time valid position, take first shot
+					trig->_last_shoot_position = current_position;
+					trig->_valid_position = pos.xy_valid;
+					trig->shoot_once();
+				}
+
+				// Check that distance threshold is exceeded
+				if ((trig->_last_shoot_position - current_position).length() >= trig->_distance) {
+					trig->shoot_once();
+					trig->_last_shoot_position = current_position;
+				}
+
+			}
 
 		} else {
-			orb_publish(ORB_ID(vehicle_command_ack), trig->_cmd_ack_pub, &command_ack);
-
+			poll_interval_usec = 100000;
 		}
 	}
+}
 
-	work_queue(LPWORK, &_work, (worker_t)&CameraTrigger::cycle_trampoline,
-		   camera_trigger::g_camera_trigger, USEC2TICK(poll_interval_usec));
+// Send ACKs for trigger commands
+if (updated && need_ack)
+{
+	vehicle_command_ack_s command_ack = {};
+
+	command_ack.command = cmd.command;
+	command_ack.result = cmd_result;
+
+	if (trig->_cmd_ack_pub == nullptr) {
+		trig->_cmd_ack_pub = orb_advertise_queue(ORB_ID(vehicle_command_ack), &command_ack,
+				     vehicle_command_ack_s::ORB_QUEUE_LENGTH);
+
+	} else {
+		orb_publish(ORB_ID(vehicle_command_ack), trig->_cmd_ack_pub, &command_ack);
+
+	}
+}
+
+work_queue(LPWORK, &_work, (worker_t)&CameraTrigger::cycle_trampoline,
+	   camera_trigger::g_camera_trigger, USEC2TICK(poll_interval_usec));
 }
 
 void
