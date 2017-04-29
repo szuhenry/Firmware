@@ -375,7 +375,7 @@ CameraTrigger::start()
 		control(true);
 	}
 
-	// Prevent camera from sleeping, if triggering is enabled and the interface supports it
+	// If not in mission mode and the interface supports it, enable power to the camera
 	if ((_mode > 0 && _mode < 4) && _camera_interface->has_power_control()) {
 		toggle_power();
 		enable_keep_alive(true);
